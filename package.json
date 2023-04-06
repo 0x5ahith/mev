@@ -13,12 +13,22 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.57.1",
+    "@typescript-eslint/parser": "^5.57.1",
+    "eslint": "^8.37.0",
+    "eslint-config-standard-with-typescript": "^34.0.1",
+    "eslint-plugin-import": "^2.27.5",
+    "eslint-plugin-n": "^15.7.0",
+    "eslint-plugin-promise": "^6.1.1",
+    "eslint-plugin-react": "^7.32.2",
     "hardhat": "^2.13.0",
     "ts-node": "^10.9.1",
-    "typescript": "^5.0.2"
+    "typescript": "^5.0.3"
   },
   "dependencies": {
     "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "@uniswap/sdk-core": "^3.2.2",
+    "@uniswap/v3-sdk": "^3.9.0",
     "abort-controller": "^3.0.0",
     "abstract-level": "^1.0.3",
     "adm-zip": "^0.4.16",
@@ -169,6 +179,7 @@
     "path-parse": "^1.0.7",
     "pbkdf2": "^3.1.2",
     "picomatch": "^2.3.1",
+    "prettier": "^2.8.7",
     "qs": "^6.11.1",
     "queue-microtask": "^1.2.3",
     "randombytes": "^2.1.0",

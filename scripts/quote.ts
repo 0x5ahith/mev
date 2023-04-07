@@ -3,8 +3,34 @@ import { SupportedChainId, Token } from "@uniswap/sdk-core";
 import { ethers, network } from "hardhat";
 import { QUOTER_ADDRESS, SUSHI_FACTORY_ADDRESS } from "./constants";
 import Quoter from "@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json";
+import UniswapV2Pair from "@uniswap/v2-core/build/UniswapV2Pair.json";
+import UniswapV2Factory from "@uniswap/v2-core/build/UniswapV2Factory.json";
 
 const provider = new ethers.providers.JsonRpcProvider(network.config.url);
+
+async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
+  const factoryContract = new ethers.Contract(
+    SUSHI_FACTORY_ADDRESS[network.name],
+    UniswapV2Factory.abi,
+    provider
+  );
+  const pairAddress = await factoryContract.getPair(
+    tokenA.address,
+    tokenB.address
+  );
+  const pairContract = new ethers.Contract(
+    pairAddress,
+    UniswapV2Pair.abi,
+    provider
+  );
+  const [amountA, amountB] = await pairContract.getReserves();
+
+  const token0Address = await pairContract.token0();
+  if (token0Address != tokenA.address) [tokenA, tokenB] = [tokenB, tokenA];
+
+  return ((ethers.utils.formatUnits(amountA, tokenA.decimals) as number) /
+    ethers.utils.formatUnits(amountB, tokenB.decimals)) as number;
+}
 
 async function getUniswapPrice(
   tokenA: Token,

@@ -27,16 +27,19 @@ contract SushiArb is IUniswapV3FlashCallback {
     uint256 amountA; // TODO: can i reduce int size?
     uint256 amountBOutMin;
     uint256 amountAOutMin;
+    address uniswapFlashPool;
     address uniswapPool;
     address sushiswapPool;
+    uint24 uniswapPoolFee;
   }
   struct FlashCallbackParams {
     address tokenA;
     uint256 amountA;
     uint256 amountBOutMin;
     uint256 amountAOutMin;
-    address uniswapPool;
+    address uniswapFlashPool;
     address sushiswapPool;
+    uint24 uniswapPoolFee;
     address caller;
   }
 
@@ -52,12 +55,15 @@ contract SushiArb is IUniswapV3FlashCallback {
   }
 
   function initArb(ArbParams calldata params) external {
-    IUniswapV3Pool pool = IUniswapV3Pool(params.uniswapPool);
+    IUniswapV3Pool flashPool = IUniswapV3Pool(params.uniswapFlashPool);
+    uint256 token0Amount = params.tokenA == flashPool.token0()
+      ? params.amountA
+      : 0;
+    uint256 token1Amount = params.tokenA == flashPool.token1()
+      ? params.amountA
+      : 0;
 
-    uint256 token0Amount = params.tokenA == pool.token0() ? params.amountA : 0;
-    uint256 token1Amount = params.tokenA == pool.token1() ? params.amountA : 0;
-
-    pool.flash(
+    flashPool.flash(
       address(this),
       token0Amount,
       token1Amount,
@@ -67,8 +73,9 @@ contract SushiArb is IUniswapV3FlashCallback {
           amountA: params.amountA,
           amountBOutMin: params.amountBOutMin,
           amountAOutMin: params.amountAOutMin,
-          uniswapPool: params.uniswapPool,
+          uniswapFlashPool: params.uniswapFlashPool,
           sushiswapPool: params.sushiswapPool,
+          uniswapPoolFee: params.uniswapPoolFee,
           caller: msg.sender
         })
       )
@@ -80,31 +87,35 @@ contract SushiArb is IUniswapV3FlashCallback {
     uint256 fee1,
     bytes calldata data
   ) external override {
+    require(fee0 == 0 || fee1 == 0, 'Flash allowed for only one token');
     FlashCallbackParams memory params = abi.decode(data, (FlashCallbackParams));
 
     // Validate caller is a Uniswap pool
-    IUniswapV3Pool pool = IUniswapV3Pool(params.uniswapPool);
-    address token0 = pool.token0();
-    address token1 = pool.token1();
-    uint24 uniswapFee = pool.fee();
+    IUniswapV3Pool flashPool = IUniswapV3Pool(params.uniswapFlashPool);
+    address token0 = flashPool.token0();
+    address token1 = flashPool.token1();
     CallbackValidation.verifyCallback(
       uniswapV3Factory,
       token0,
       token1,
-      uniswapFee
+      flashPool.fee()
     );
 
     address tokenA = params.tokenA;
     address tokenB = tokenA != token0 ? token0 : token1;
+
+    // Swap on SushiSwap
     address[] memory path = new address[](2);
     path[0] = tokenA;
     path[1] = tokenB;
 
-    // Swap on SushiSwap
-    uint256 amountA = params.amountA;
-    TransferHelper.safeApprove(tokenA, address(sushiswapRouter), amountA);
+    TransferHelper.safeApprove(
+      tokenA,
+      address(sushiswapRouter),
+      params.amountA
+    );
     uint256 amountB = sushiswapRouter.swapExactTokensForTokens(
-      amountA,
+      params.amountA,
       params.amountBOutMin,
       path,
       address(this),
@@ -113,15 +124,15 @@ contract SushiArb is IUniswapV3FlashCallback {
 
     // Swap back on Uniswap
     uint256 amountAOwed = LowGasSafeMath.add(
-      LowGasSafeMath.add(params.amountA, fee0),
-      fee1
+      params.amountA,
+      fee0 != 0 ? fee0 : fee1
     );
     TransferHelper.safeApprove(tokenB, address(uniswapV3Router), amountB);
-    amountA = uniswapV3Router.exactInputSingle(
+    uint256 amountAOut = uniswapV3Router.exactInputSingle(
       ISwapRouter.ExactInputSingleParams({
         tokenIn: tokenB,
         tokenOut: tokenA,
-        fee: uniswapFee,
+        fee: params.uniswapPoolFee,
         recipient: address(this),
         deadline: block.timestamp + 1,
         amountIn: amountB,
@@ -136,8 +147,8 @@ contract SushiArb is IUniswapV3FlashCallback {
     TransferHelper.safeTransfer(tokenA, msg.sender, amountAOwed);
 
     // Pay out profits
-    if (amountA > amountAOwed) {
-      uint256 profits = LowGasSafeMath.sub(amountA, amountAOwed);
+    if (amountAOut > amountAOwed) {
+      uint256 profits = LowGasSafeMath.sub(amountAOut, amountAOwed);
       TransferHelper.safeTransfer(tokenA, params.caller, profits);
     }
   }

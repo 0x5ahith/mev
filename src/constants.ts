@@ -5,3 +5,5 @@ export const QUOTER_ADDRESS: { [index: string]: string } = {
 export const SUSHI_FACTORY_ADDRESS: { [index: string]: string } = {
   mainnet: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",
 };
+
+export const SUSHISWAP_FEE = 3000;

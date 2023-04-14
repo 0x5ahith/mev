@@ -1,14 +1,18 @@
 import { FeeAmount } from "@uniswap/v3-sdk";
 import { SupportedChainId, Token } from "@uniswap/sdk-core";
 import { ethers, network } from "hardhat";
-import { QUOTER_ADDRESS, SUSHI_FACTORY_ADDRESS } from "./constants";
+import {
+  QUOTER_ADDRESS,
+  SUSHI_FACTORY_ADDRESS,
+  SUSHISWAP_FEE,
+} from "./constants";
 import Quoter from "@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json";
 import UniswapV2Pair from "@uniswap/v2-core/build/UniswapV2Pair.json";
 import UniswapV2Factory from "@uniswap/v2-core/build/UniswapV2Factory.json";
 
 const provider = new ethers.providers.JsonRpcProvider(network.config.url);
 
-async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
+export async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
   const factoryContract = new ethers.Contract(
     SUSHI_FACTORY_ADDRESS[network.name],
     UniswapV2Factory.abi,
@@ -32,7 +36,7 @@ async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
     ethers.utils.formatUnits(amountB, tokenB.decimals)) as number;
 }
 
-async function getUniswapPrice(
+export async function getUniswapPrices(
   tokenA: Token,
   tokenB: Token
 ): Promise<[number, number][]> {
@@ -71,6 +75,8 @@ async function getUniswapPrice(
   return prices;
 }
 
+// function getMaxProfitableArb();
+
 const WETH_TOKEN = new Token(
   SupportedChainId.MAINNET,
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -88,8 +94,9 @@ const USDC_TOKEN = new Token(
 );
 
 async function main(): Promise<void> {
-  console.log(await getSushiswapPrice(WETH_TOKEN, USDC_TOKEN));
-  console.log(await getUniswapPrice(WETH_TOKEN, USDC_TOKEN));
+  const poolPrices = await getUniswapPrices(WETH_TOKEN, USDC_TOKEN);
+  const sushiswapPrice = await getSushiswapPrice(WETH_TOKEN, USDC_TOKEN);
+  poolPrices.push([sushiswapPrice, SUSHISWAP_FEE]);
 }
 
 main().catch((error) => {

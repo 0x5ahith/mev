@@ -1,18 +1,110 @@
-import { FeeAmount } from "@uniswap/v3-sdk";
+import {
+  FeeAmount,
+  FACTORY_ADDRESS,
+  computePoolAddress,
+} from "@uniswap/v3-sdk";
 import { SupportedChainId, Token } from "@uniswap/sdk-core";
 import { ethers, network } from "hardhat";
-import {
-  QUOTER_ADDRESS,
-  SUSHI_FACTORY_ADDRESS,
-  SUSHISWAP_FEE,
-} from "./constants";
+import IUniswapV3PoolABI from "@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json";
 import Quoter from "@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json";
 import UniswapV2Pair from "@uniswap/v2-core/build/UniswapV2Pair.json";
 import UniswapV2Factory from "@uniswap/v2-core/build/UniswapV2Factory.json";
 
+import { Pool, V2Pool, V3Pool, permuteAllArbs, Arb } from "./utils";
+
 const provider = new ethers.providers.JsonRpcProvider(network.config.url);
 
-export async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
+// export async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
+//   const [amountA, amountB] = await pairContract.getReserves();
+
+//   const token0Address = await pairContract.token0();
+//   if (token0Address != tokenA.address) [tokenA, tokenB] = [tokenB, tokenA];
+
+//   return ((ethers.utils.formatUnits(amountA, tokenA.decimals) as number) /
+//     ethers.utils.formatUnits(amountB, tokenB.decimals)) as number;
+// }
+
+// export async function getUniswapData(
+//   tokenA: Token,
+//   tokenB: Token
+// ): Promise<[number, number][]> {
+//   const quoterContract = new ethers.Contract(
+//     QUOTER_ADDRESS[network.name],
+//     Quoter.abi,
+//     provider
+//   );
+//   const prices: [number, number][] = [];
+//   for (let feeAmount of Object.values(FeeAmount)) {
+//     if (isNaN(Number(feeAmount))) continue;
+
+//     feeAmount = feeAmount as number;
+//     try {
+//       // Get price of tokenB in terms of tokenA
+//       const price: number =
+//         await quoterContract.callStatic.quoteExactInputSingle(
+//           tokenA.address,
+//           tokenB.address,
+//           feeAmount,
+//           ethers.utils.parseUnits("1", tokenA.decimals),
+//           0
+//         );
+
+//       prices.push([
+//         ethers.utils.formatUnits(price, tokenB.decimals) as number,
+//         feeAmount,
+//       ]);
+//     } catch (e) {
+//       console.log(e);
+//       console.log("No %f% fee pool", feeAmount / 10000);
+//     }
+//   }
+
+//   return prices;
+// }
+
+async function getUniswapPools(
+  tokenA: Token,
+  tokenB: Token
+): Promise<V3Pool[]> {
+  const pools: V3Pool[] = [];
+
+  for (let feeAmount of Object.values(FeeAmount)) {
+    if (isNaN(Number(feeAmount))) continue;
+
+    feeAmount = feeAmount as number;
+
+    const poolAddress = computePoolAddress({
+      factoryAddress: FACTORY_ADDRESS,
+      tokenA: tokenA,
+      tokenB: tokenB,
+      fee: feeAmount,
+    });
+    const poolContract = new V3Pool(
+      poolAddress,
+      IUniswapV3PoolABI.abi,
+      provider
+    );
+
+    try {
+      await poolContract.fee();
+      pools.push(poolContract);
+    } catch (e) {
+      console.log(
+        "No %f% fee %s-%s Uniswap pool",
+        feeAmount / 10000,
+        tokenA.symbol,
+        tokenB.symbol
+      );
+    }
+  }
+
+  return pools;
+}
+
+async function getSushiswapPool(
+  tokenA: Token,
+  tokenB: Token
+): Promise<V2Pool | null> {
   const factoryContract = new ethers.Contract(
     SUSHI_FACTORY_ADDRESS[network.name],
     UniswapV2Factory.abi,
@@ -22,57 +114,23 @@ export async function getSushiswapPrice(tokenA: Token, tokenB: Token): number {
     tokenA.address,
     tokenB.address
   );
-  const pairContract = new ethers.Contract(
-    pairAddress,
-    UniswapV2Pair.abi,
-    provider
-  );
-  const [amountA, amountB] = await pairContract.getReserves();
+  const poolContract = new V2Pool(pairAddress, UniswapV2Pair.abi, provider);
 
-  const token0Address = await pairContract.token0();
-  if (token0Address != tokenA.address) [tokenA, tokenB] = [tokenB, tokenA];
-
-  return ((ethers.utils.formatUnits(amountA, tokenA.decimals) as number) /
-    ethers.utils.formatUnits(amountB, tokenB.decimals)) as number;
-}
-
-export async function getUniswapPrices(
-  tokenA: Token,
-  tokenB: Token
-): Promise<[number, number][]> {
-  const prices: [number, number][] = [];
-
-  const quoterContract = new ethers.Contract(
-    QUOTER_ADDRESS[network.name],
-    Quoter.abi,
-    provider
-  );
-
-  for (let amount of Object.values(FeeAmount)) {
-    if (isNaN(Number(amount))) continue;
-
-    amount = amount as number;
-    try {
-      const price: number =
-        await quoterContract.callStatic.quoteExactInputSingle(
-          tokenA.address,
-          tokenB.address,
-          amount,
-          ethers.utils.parseUnits("1", tokenA.decimals),
-          0
-        );
-
-      prices.push([
-        ethers.utils.formatUnits(price, tokenB.decimals) as number,
-        amount,
-      ]);
-    } catch (e) {
-      console.log(e);
-      console.log("No %f% fee pool", amount / 10000);
-    }
+  try {
+    await poolContract.token0();
+    return poolContract;
+  } catch (e) {
+    console.log("No %s-%s SushiSwap pool", tokenA.symbol, tokenB.symbol);
   }
 
-  return prices;
+  return null;
+}
+
+async function getPools(tokenA: Token, tokenB: Token): Promise<Pool[]> {
+  const pools: Pool[] = await getUniswapPools(tokenA, tokenB);
+  const sushiswapPool = await getSushiswapPool(tokenA, tokenB);
+  if (sushiswapPool) pools.push(sushiswapPool);
+  return pools;
 }
 
 // function getMaxProfitableArb();
@@ -93,10 +151,18 @@ const USDC_TOKEN = new Token(
   "USD//C"
 );
 
+const DYDX_TOKEN = new Token(
+  SupportedChainId.MAINNET,
+  "0x92D6C1e31e14520e676a687F0a93788B716BEff5",
+  18,
+  "DYDX",
+  "dYdX"
+);
+
 async function main(): Promise<void> {
-  const poolPrices = await getUniswapPrices(WETH_TOKEN, USDC_TOKEN);
-  const sushiswapPrice = await getSushiswapPrice(WETH_TOKEN, USDC_TOKEN);
-  poolPrices.push([sushiswapPrice, SUSHISWAP_FEE]);
+  const pools = await getPools(WETH_TOKEN, USDC_TOKEN);
+  console.log("Total number of pools:", pools.length);
+  console.log("Total permutations:", permuteAllArbs(pools).length);
 }
 
 main().catch((error) => {

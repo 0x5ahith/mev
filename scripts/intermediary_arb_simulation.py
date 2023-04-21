@@ -53,19 +53,17 @@ def create_pools() -> List[Pool]:
 
 # Returns token_in and optimal amount
 def get_arbitrage_amount(arb_pool: Pool, real_pool: Pool) -> Tuple[int, float]:
-    def calculate_optimal_token_in(P_in_out, r_in, r_out):
-        return sqrt(P_in_out * r_in * r_out) - r_in
+    def calculate_optimal_token_in(P_out_in, r_in, r_out):
+        return sqrt(r_in * r_out / P_out_in) - r_in
 
     P_real = real_pool.get_price()
     P_arb = arb_pool.get_price()
 
     token_in = 1 if P_real > P_arb else 0
     amount_in = (
-        calculate_optimal_token_in(P_real, arb_pool.reserve1, arb_pool.reserve0)
+        calculate_optimal_token_in(1.0 / P_real, arb_pool.reserve1, arb_pool.reserve0)
         if token_in == 1
-        else calculate_optimal_token_in(
-            1.0 / P_real, arb_pool.reserve0, arb_pool.reserve1
-        )
+        else calculate_optimal_token_in(P_real, arb_pool.reserve0, arb_pool.reserve1)
     )
 
     return token_in, amount_in

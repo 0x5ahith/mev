@@ -49,14 +49,14 @@ export function permuteAllArbs(pools: Pool[]): ArbSetup[] {
   return allArbSetups;
 }
 
-// where P_b_a is price of token0 (token1/token0)
+// where Pba is price of token0 (token1/token0)
 export function priceToSqrtPriceX96(
-  P_b_a: number,
+  Pba: number,
   token0: Token,
   token1: Token
 ): bigint {
   return BigInt(
-    Math.sqrt(P_b_a * (10 ** token1.decimals / 10 ** token0.decimals)) * 2 ** 96
+    Math.sqrt(Pba * (10 ** token1.decimals / 10 ** token0.decimals)) * 2 ** 96
   );
 }
 
@@ -69,4 +69,15 @@ export function fromReadableAmount(
 
 export function toReadableAmount(rawAmount: number, decimals: number): string {
   return (+ethers.utils.formatUnits(rawAmount, decimals)).toFixed(3).toString();
+}
+
+export function sushiswapOut(
+  amountIn: number,
+  reserveIn: number,
+  reserveOut: number,
+  fee: number
+): number {
+  const k = 1 - fee;
+  const amountInPostFee = amountIn * k;
+  return (reserveOut * amountInPostFee) / (reserveIn + amountInPostFee);
 }

@@ -59,3 +59,14 @@ export function priceToSqrtPriceX96(
     Math.sqrt(P_b_a * (10 ** token1.decimals / 10 ** token0.decimals)) * 2 ** 96
   );
 }
+
+export function fromReadableAmount(
+  amount: number,
+  decimals: number
+): ethers.BigNumber {
+  return ethers.utils.parseUnits(amount.toString(), decimals);
+}
+
+export function toReadableAmount(rawAmount: number, decimals: number): string {
+  return (+ethers.utils.formatUnits(rawAmount, decimals)).toFixed(3).toString();
+}

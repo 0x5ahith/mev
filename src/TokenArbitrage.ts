@@ -12,7 +12,15 @@ import UniswapV2Pair from "@uniswap/v2-core/build/UniswapV2Pair.json";
 import UniswapV2Factory from "@uniswap/v2-core/build/UniswapV2Factory.json";
 
 import { QUOTER_ADDRESS, SUSHI_FACTORY_ADDRESS } from "./constants";
-import { permuteAllArbs, priceToSqrtPriceX96, provider } from "./helpers";
+import {
+  fromReadableAmount,
+  permuteAllArbs,
+  priceToSqrtPriceX96,
+  provider,
+  toReadableAmount,
+} from "./helpers";
+
+const SLIPPAGE = 0.01;
 
 export interface ArbSetup {
   flashPool: Pool;
@@ -47,7 +55,7 @@ export class TokenArbitrage {
     let bestArb: Arb | undefined;
 
     for (const arbSetup of allArbSetups) {
-      const arb = await this._getArbProfit(arbSetup);
+      const arb = await this.getArbProfit(arbSetup);
 
       if (
         arb.profit > 0 &&
@@ -59,7 +67,7 @@ export class TokenArbitrage {
     return bestArb;
   }
 
-  async _getArbProfit(arbSetup: ArbSetup): Promise<Arb> {
+  async getArbProfit(arbSetup: ArbSetup): Promise<Arb> {
     // assume both uniswap pools first
     const P_arb = await this.getPrice(arbSetup.firstSwapPool);
     const P_real = await this.getPrice(arbSetup.secondSwapPool);
@@ -67,10 +75,7 @@ export class TokenArbitrage {
     const token_in = P_real > P_arb ? this.token1 : this.token0;
     const token_out = token_in != this.token0 ? this.token0 : this.token1;
     const firstFee = await arbSetup.firstSwapPool.fee();
-    const amount_out = +ethers.utils.formatUnits(
-      999999999999,
-      token_out.decimals
-    );
+    const amount_out_limit = fromReadableAmount(1e20, token_out.decimals);
     const sqrtPriceLimitX96 = priceToSqrtPriceX96(
       P_real,
       this.token0,
@@ -83,14 +88,64 @@ export class TokenArbitrage {
       provider
     );
     // Get optimal amount_in of token_in to arbitrage arbSetup.firstSwapPool
-    let amount_in = await quoterContract.callStatic.quoteExactOutputSingle(
+    const amount_in = await quoterContract.callStatic.quoteExactOutputSingle(
       token_in.address,
       token_out.address,
       firstFee,
-      amount_out, // Arbitrary large amount to see how much token_in is needed to swap to get this pool's price to P_real
+      amount_out_limit, // Arbitrary large amount to see how much token_in is needed to swap to get this pool's price to P_real
       sqrtPriceLimitX96
     );
-    amount_in = +ethers.utils.formatUnits(amount_in, token_in.decimals);
+    console.log(
+      `${toReadableAmount(amount_in, token_in.decimals)} ${
+        token_in.symbol
+      } needed to arbitrage pool 1 of price ${P_arb} to pool 2 of price ${P_real}`
+    );
+    const amount_out = await quoterContract.callStatic.quoteExactInputSingle(
+      token_in.address,
+      token_out.address,
+      firstFee,
+      amount_in,
+      sqrtPriceLimitX96
+    );
+    console.log(
+      `${toReadableAmount(amount_out, token_out.decimals)} ${
+        token_out.symbol
+      } received from ${toReadableAmount(amount_in, token_in.decimals)} ${
+        token_in.symbol
+      } on Pool 1`
+    );
+
+    // Collect profits by swapping amount_out of token_out on arbSetup.secondSwapPool back to token_in
+    const secondFee = await arbSetup.secondSwapPool.fee();
+    const zeroForOne = token_out.address < token_in.address;
+    const P_real_slippage = zeroForOne
+      ? P_real * (1 - SLIPPAGE)
+      : P_real * (1 + SLIPPAGE);
+
+    const amount_in_final =
+      await quoterContract.callStatic.quoteExactInputSingle(
+        token_out.address,
+        token_in.address,
+        secondFee,
+        amount_out,
+        priceToSqrtPriceX96(P_real_slippage, this.token0, this.token1)
+      );
+    console.log(
+      `${toReadableAmount(amount_in_final, token_in.decimals)} ${
+        token_in.symbol
+      } received from ${toReadableAmount(amount_out, token_out.decimals)} ${
+        token_out.symbol
+      } on Pool 2`
+    );
+    console.log(
+      `Profit of ${toReadableAmount(
+        amount_in_final - amount_in,
+        token_in.decimals
+      )} ${token_in.symbol}`
+    );
+
+    // add gas costs
+    // add flash fees
   }
 
   async getPools(): Promise<Pool[]> {

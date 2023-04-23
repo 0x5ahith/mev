@@ -3,8 +3,6 @@ import { Token } from "@uniswap/sdk-core";
 import { USDC_TOKEN, WETH_TOKEN } from "./constants";
 import { TokenArbitrage } from "./TokenArbitrage";
 
-const SUSHISWAP_FEE = 30; // to distinguish from Uniswap's 3000 fee in smart contract even though both are 0.3%
-
 async function checkAndDoIfArbExistsForTokens(tokenA: Token, tokenB: Token) {
   const arb = new TokenArbitrage(tokenA, tokenB);
 

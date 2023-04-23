@@ -1,5 +1,6 @@
 import { SupportedChainId, Token } from "@uniswap/sdk-core";
 
+export const SUSHISWAP_FEE = 0.003;
 export const SLIPPAGE = 0.01;
 
 export const QUOTER_ADDRESS: { [index: string]: string } = {

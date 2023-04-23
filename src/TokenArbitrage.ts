@@ -11,7 +11,12 @@ import IUniswapV3PoolABI from "@uniswap/v3-core/artifacts/contracts/interfaces/I
 import UniswapV2Pair from "@uniswap/v2-core/build/UniswapV2Pair.json";
 import UniswapV2Factory from "@uniswap/v2-core/build/UniswapV2Factory.json";
 
-import { QUOTER_ADDRESS, SUSHI_FACTORY_ADDRESS, SLIPPAGE } from "./constants";
+import {
+  QUOTER_ADDRESS,
+  SUSHI_FACTORY_ADDRESS,
+  SLIPPAGE,
+  SUSHISWAP_FEE,
+} from "./constants";
 import {
   fromReadableAmount,
   permuteAllArbs,
@@ -66,109 +71,15 @@ export class TokenArbitrage {
     return bestArb;
   }
 
-  async checkIfArbProfitable(arbSetup: ArbSetup): Promise<Arb> {}
-
-  async getSushi(arbSetup: ArbSetup): Promise<Arb> {
-    const pArb = await this.getPrice(arbSetup.firstSwapPool);
-    const pReal = await this.getPrice(arbSetup.secondSwapPool);
-
-    const tokenA = pReal > pArb ? this.token1 : this.token0;
-    const tokenB = tokenA != this.token0 ? this.token0 : this.token1;
-    const sushiswapFee = 0.003;
-    const k = 1 - sushiswapFee;
-
-    // First swap
-    let [r0, r1] = await arbSetup.firstSwapPool.getReserves();
-    let amountAIn, amountBOut;
-
-    if (tokenA == this.token0) {
-      amountAIn = Math.sqrt((r0 * r1) / (pReal * k)) - r0 / k;
-      amountBOut = sushiswapOut(amountAIn, r0, r1, sushiswapFee);
-    } else {
-      amountAIn = Math.sqrt((pReal * r0 * r1) / k) - r1 / k;
-      amountBOut = sushiswapOut(amountAIn, r1, r0, sushiswapFee);
-    }
-
-    // Second swap
-    [r0, r1] = await arbSetup.secondSwapPool.getReserves();
-    const amountAFinal =
-      tokenB == this.token0
-        ? sushiswapOut(amountBOut, r0, r1, sushiswapFee)
-        : sushiswapOut(amountBOut, r1, r0, sushiswapFee);
-
-    const profit = amountAFinal - amountAIn;
-  }
-
-  async getArbProfit(arbSetup: ArbSetup): Promise<Arb> {
-    // assume both uniswap pools first
-    const pArb = await this.getPrice(arbSetup.firstSwapPool);
-    const pReal = await this.getPrice(arbSetup.secondSwapPool);
-
-    const tokenA = pReal > pArb ? this.token1 : this.token0;
-    const tokenB = tokenA != this.token0 ? this.token0 : this.token1;
-    const firstFee = await arbSetup.firstSwapPool.fee();
-    const tokenBLimit = fromReadableAmount(1e20, tokenB.decimals);
-    const sqrtPriceLimitX96 = priceToSqrtPriceX96(
-      pReal,
-      this.token0,
-      this.token1
-    );
-
-    const quoterContract = new ethers.Contract(
-      QUOTER_ADDRESS[network.name],
-      Quoter.abi,
-      provider
-    );
-    // Get optimal amountAIn of tokenA to arbitrage arbSetup.firstSwapPool
-    const amountAIn = await quoterContract.callStatic.quoteExactOutputSingle(
-      tokenA.address,
-      tokenB.address,
-      firstFee,
-      tokenBLimit, // Arbitrary large amount to see how much tokenA is needed to swap to get this pool's price to pReal
-      sqrtPriceLimitX96
-    );
-    console.log(
-      `${toReadableAmount(amountAIn, tokenA.decimals)} ${
-        tokenA.symbol
-      } needed to arbitrage pool 1 of price ${pArb} to pool 2 of price ${pReal}`
-    );
-    const amountBOut = await quoterContract.callStatic.quoteExactInputSingle(
-      tokenA.address,
-      tokenB.address,
-      firstFee,
-      amountAIn,
-      sqrtPriceLimitX96
-    );
-    console.log(
-      `${toReadableAmount(amountBOut, tokenB.decimals)} ${
-        tokenB.symbol
-      } received from ${toReadableAmount(amountAIn, tokenA.decimals)} ${
-        tokenA.symbol
-      } on Pool 1`
-    );
+  async checkIfArbProfitable(arbSetup: ArbSetup): Promise<Arb> {
+    const [amountAIn, amountBOut] = await this._getArbitrageSwapOut(arbSetup);
+    const amountAFinal = await this._getProfitSwapOut(arbSetup, amountBOut);
 
     // Collect profits by swapping amountBOut of tokenB on arbSetup.secondSwapPool back to tokenA
-    const secondFee = await arbSetup.secondSwapPool.fee();
-    const zeroForOne = tokenB.address < tokenA.address;
-    const pRealSlippage = zeroForOne
-      ? pReal * (1 - SLIPPAGE)
-      : pReal * (1 + SLIPPAGE);
-
-    const amountAFinal = await quoterContract.callStatic.quoteExactInputSingle(
-      tokenB.address,
-      tokenA.address,
-      secondFee,
-      amountBOut,
-      priceToSqrtPriceX96(pRealSlippage, this.token0, this.token1)
-    );
-    console.log(
-      `${toReadableAmount(amountAFinal, tokenA.decimals)} ${
-        tokenA.symbol
-      } received from ${toReadableAmount(amountBOut, tokenB.decimals)} ${
-        tokenB.symbol
-      } on Pool 2`
-    );
     const profit = amountAFinal - amountAIn;
+    const pArb = await this.getPrice(arbSetup.firstSwapPool);
+    const pReal = await this.getPrice(arbSetup.secondSwapPool);
+    const tokenA = pReal > pArb ? this.token1 : this.token0;
     console.log(
       `Profit of ${toReadableAmount(profit, tokenA.decimals)} ${tokenA.symbol}`
     );
@@ -188,6 +99,128 @@ export class TokenArbitrage {
     const flashFee = (amountAIn * flashPoolFee) / 1e6;
 
     // add gas costs
+  }
+
+  async _getArbitrageSwapOut(arbSetup: ArbSetup): Promise<[number, number]> {
+    const pArb = await this.getPrice(arbSetup.firstSwapPool);
+    const pReal = await this.getPrice(arbSetup.secondSwapPool);
+
+    const tokenA = pReal > pArb ? this.token1 : this.token0;
+    const tokenB = tokenA != this.token0 ? this.token0 : this.token1;
+
+    let amountAIn, amountBOut;
+
+    if (arbSetup.firstSwapPool instanceof V2Pool) {
+      // SushiSwap pool
+      const k = 1 - SUSHISWAP_FEE;
+
+      // First swap
+      const [r0, r1] = await arbSetup.firstSwapPool.getReserves();
+
+      if (tokenA == this.token0) {
+        amountAIn = Math.sqrt((r0 * r1) / (pReal * k)) - r0 / k;
+        amountBOut = sushiswapOut(amountAIn, r0, r1, SUSHISWAP_FEE);
+      } else {
+        amountAIn = Math.sqrt((pReal * r0 * r1) / k) - r1 / k;
+        amountBOut = sushiswapOut(amountAIn, r1, r0, SUSHISWAP_FEE);
+      }
+    } else {
+      // Uniswap pool
+      const firstFee = await arbSetup.firstSwapPool.fee();
+      const tokenBLimit = fromReadableAmount(1e20, tokenB.decimals);
+      const sqrtPriceLimitX96 = priceToSqrtPriceX96(
+        pReal,
+        this.token0,
+        this.token1
+      );
+
+      const quoterContract = new ethers.Contract(
+        QUOTER_ADDRESS[network.name],
+        Quoter.abi,
+        provider
+      );
+      // Get optimal amountAIn of tokenA to arbitrage arbSetup.firstSwapPool
+      amountAIn = await quoterContract.callStatic.quoteExactOutputSingle(
+        tokenA.address,
+        tokenB.address,
+        firstFee,
+        tokenBLimit, // Arbitrary large amount to see how much tokenA is needed to swap to get this pool's price to pReal
+        sqrtPriceLimitX96
+      );
+      console.log(
+        `${toReadableAmount(amountAIn, tokenA.decimals)} ${
+          tokenA.symbol
+        } needed to arbitrage pool 1 of price ${pArb} to pool 2 of price ${pReal}`
+      );
+      amountBOut = await quoterContract.callStatic.quoteExactInputSingle(
+        tokenA.address,
+        tokenB.address,
+        firstFee,
+        amountAIn,
+        sqrtPriceLimitX96
+      );
+      console.log(
+        `${toReadableAmount(amountBOut, tokenB.decimals)} ${
+          tokenB.symbol
+        } received from ${toReadableAmount(amountAIn, tokenA.decimals)} ${
+          tokenA.symbol
+        } on Pool 1`
+      );
+    }
+
+    return [amountAIn, amountBOut];
+  }
+
+  async _getProfitSwapOut(
+    arbSetup: ArbSetup,
+    amountBIn: number
+  ): Promise<number> {
+    const pArb = await this.getPrice(arbSetup.firstSwapPool);
+    const pReal = await this.getPrice(arbSetup.secondSwapPool);
+
+    const tokenA = pReal > pArb ? this.token1 : this.token0;
+    const tokenB = tokenA != this.token0 ? this.token0 : this.token1;
+
+    let amountAFinal;
+
+    if (arbSetup.secondSwapPool instanceof V2Pool) {
+      // SushiSwap pool
+
+      const [r0, r1] = await arbSetup.secondSwapPool.getReserves();
+      amountAFinal =
+        tokenB == this.token0
+          ? sushiswapOut(amountBIn, r0, r1, SUSHISWAP_FEE)
+          : sushiswapOut(amountBIn, r1, r0, SUSHISWAP_FEE);
+    } else {
+      // Uniswap pool
+      const secondFee = await arbSetup.secondSwapPool.fee();
+      const zeroForOne = tokenB.address < tokenA.address;
+      const pRealSlippage = zeroForOne
+        ? pReal * (1 - SLIPPAGE)
+        : pReal * (1 + SLIPPAGE);
+
+      const quoterContract = new ethers.Contract(
+        QUOTER_ADDRESS[network.name],
+        Quoter.abi,
+        provider
+      );
+      amountAFinal = await quoterContract.callStatic.quoteExactInputSingle(
+        tokenB.address,
+        tokenA.address,
+        secondFee,
+        amountBIn,
+        priceToSqrtPriceX96(pRealSlippage, this.token0, this.token1)
+      );
+      console.log(
+        `${toReadableAmount(amountAFinal, tokenA.decimals)} ${
+          tokenA.symbol
+        } received from ${toReadableAmount(amountBIn, tokenB.decimals)} ${
+          tokenB.symbol
+        } on Pool 2`
+      );
+    }
+
+    return amountAFinal;
   }
 
   async getPools(): Promise<Pool[]> {

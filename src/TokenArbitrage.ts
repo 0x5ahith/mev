@@ -113,15 +113,15 @@ export class TokenArbitrage {
     if (arbSetup.firstSwapPool instanceof V2Pool) {
       // SushiSwap pool
       const k = 1 - SUSHISWAP_FEE;
-
-      // First swap
       const [r0, r1] = await arbSetup.firstSwapPool.getReserves();
+      const pRealAdjusted =
+        pReal * 10 ** (this.token1.decimals - this.token0.decimals);
 
       if (tokenA == this.token0) {
-        amountAIn = Math.sqrt((r0 * r1) / (pReal * k)) - r0 / k;
+        amountAIn = Math.sqrt((r0 * r1) / (pRealAdjusted * k)) - r0 / k;
         amountBOut = sushiswapOut(amountAIn, r0, r1, SUSHISWAP_FEE);
       } else {
-        amountAIn = Math.sqrt((pReal * r0 * r1) / k) - r1 / k;
+        amountAIn = Math.sqrt((pRealAdjusted * r0 * r1) / k) - r1 / k;
         amountBOut = sushiswapOut(amountAIn, r1, r0, SUSHISWAP_FEE);
       }
     } else {

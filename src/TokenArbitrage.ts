@@ -35,7 +35,7 @@ export interface ArbSetup {
 export interface Arb {
   profit: number; // token1 in terms of token0
   pools: ArbSetup;
-  flashToken: string;
+  flashToken: Token;
   flashAmount: number;
   firstSwapOutMin: number;
   secondSwapOutMin: number;
@@ -72,42 +72,67 @@ export class TokenArbitrage {
   }
 
   async checkIfArbProfitable(arbSetup: ArbSetup): Promise<Arb> {
-    const [amountAIn, amountBOut] = await this._getArbitrageSwapOut(arbSetup);
-    const amountAFinal = await this._getProfitSwapOut(arbSetup, amountBOut);
+    const [tokenA, tokenB, pArb, pReal] = await this._getTokensAndPrices(
+      arbSetup
+    );
+    const arbInfo: Arb = {
+      profit: -1,
+      pools: arbSetup,
+      flashToken: tokenA,
+      flashAmount: -1,
+      firstSwapOutMin: -1,
+      secondSwapOutMin: -1,
+    };
 
-    // Collect profits by swapping amountBOut of tokenB on arbSetup.secondSwapPool back to tokenA
-    const profit = amountAFinal - amountAIn;
-    const pArb = await this.getPrice(arbSetup.firstSwapPool);
-    const pReal = await this.getPrice(arbSetup.secondSwapPool);
-    const tokenA = pReal > pArb ? this.token1 : this.token0;
+    let amountAIn, amountBOut, amountAFinal;
+
+    try {
+      [amountAIn, amountBOut] = await this._getArbitrageSwapOut(arbSetup);
+      arbInfo.flashAmount = amountAIn;
+      arbInfo.firstSwapOutMin = amountBOut;
+      if (amountAIn < 0 || amountBOut < 0) return arbInfo;
+
+      amountAFinal = await this._getProfitSwapOut(arbSetup, amountBOut);
+      arbInfo.secondSwapOutMin = amountAFinal;
+    } catch (e) {
+      if (e.reason === "SPL") return arbInfo;
+      throw e;
+    }
+
+    let profit = amountAFinal - amountAIn;
     console.log(
       `Profit of ${toReadableAmount(profit, tokenA.decimals)} ${tokenA.symbol}`
     );
-    if (profit < 0) {
-      return {
-        profit: profit,
-        pools: arbSetup,
-        flashToken: "",
-        flashAmount: -1,
-        firstSwapOutMin: -1,
-        secondSwapOutMin: -1,
-      };
-    }
+    console.log();
+    if (profit < 0) return arbInfo;
 
     // add flash fees
     const flashPoolFee = await arbSetup.flashPool.fee();
     const flashFee = (amountAIn * flashPoolFee) / 1e6;
+    profit -= flashFee;
 
     // add gas costs
+
+    arbInfo.profit = profit;
+
+    return arbInfo;
   }
 
-  async _getArbitrageSwapOut(arbSetup: ArbSetup): Promise<[number, number]> {
+  async _getTokensAndPrices(
+    arbSetup: ArbSetup
+  ): Promise<[Token, Token, number, number]> {
     const pArb = await this.getPrice(arbSetup.firstSwapPool);
     const pReal = await this.getPrice(arbSetup.secondSwapPool);
-
     const tokenA = pReal > pArb ? this.token1 : this.token0;
     const tokenB = tokenA != this.token0 ? this.token0 : this.token1;
 
+    return [tokenA, tokenB, pArb, pReal];
+  }
+
+  async _getArbitrageSwapOut(arbSetup: ArbSetup): Promise<[number, number]> {
+    const [tokenA, tokenB, pArb, pReal] = await this._getTokensAndPrices(
+      arbSetup
+    );
     let amountAIn, amountBOut;
 
     if (arbSetup.firstSwapPool instanceof V2Pool) {
@@ -147,24 +172,13 @@ export class TokenArbitrage {
         tokenBLimit, // Arbitrary large amount to see how much tokenA is needed to swap to get this pool's price to pReal
         sqrtPriceLimitX96
       );
-      console.log(
-        `${toReadableAmount(amountAIn, tokenA.decimals)} ${
-          tokenA.symbol
-        } needed to arbitrage pool 1 of price ${pArb} to pool 2 of price ${pReal}`
-      );
+
       amountBOut = await quoterContract.callStatic.quoteExactInputSingle(
         tokenA.address,
         tokenB.address,
         firstFee,
         amountAIn,
         sqrtPriceLimitX96
-      );
-      console.log(
-        `${toReadableAmount(amountBOut, tokenB.decimals)} ${
-          tokenB.symbol
-        } received from ${toReadableAmount(amountAIn, tokenA.decimals)} ${
-          tokenA.symbol
-        } on Pool 1`
       );
     }
 
@@ -175,17 +189,11 @@ export class TokenArbitrage {
     arbSetup: ArbSetup,
     amountBIn: number
   ): Promise<number> {
-    const pArb = await this.getPrice(arbSetup.firstSwapPool);
-    const pReal = await this.getPrice(arbSetup.secondSwapPool);
-
-    const tokenA = pReal > pArb ? this.token1 : this.token0;
-    const tokenB = tokenA != this.token0 ? this.token0 : this.token1;
-
+    const [tokenA, tokenB, , pReal] = await this._getTokensAndPrices(arbSetup);
     let amountAFinal;
 
     if (arbSetup.secondSwapPool instanceof V2Pool) {
       // SushiSwap pool
-
       const [r0, r1] = await arbSetup.secondSwapPool.getReserves();
       amountAFinal =
         tokenB == this.token0
@@ -210,13 +218,6 @@ export class TokenArbitrage {
         secondFee,
         amountBIn,
         priceToSqrtPriceX96(pRealSlippage, this.token0, this.token1)
-      );
-      console.log(
-        `${toReadableAmount(amountAFinal, tokenA.decimals)} ${
-          tokenA.symbol
-        } received from ${toReadableAmount(amountBIn, tokenB.decimals)} ${
-          tokenB.symbol
-        } on Pool 2`
       );
     }
 
@@ -294,10 +295,10 @@ export class TokenArbitrage {
 
   // gets price of token0 (token1/token0)
   async getPrice(pool: Pool): Promise<number> {
-    if (pool instanceof V3Pool) {
-      return await this.getUniswapPrice(pool);
+    if (pool instanceof V2Pool) {
+      return await this.getSushiswapPrice(pool);
     }
-    return await this.getSushiswapPrice(pool);
+    return await this.getUniswapPrice(pool);
   }
 
   async getUniswapPrice(pool: V3Pool): Promise<number> {
@@ -328,11 +329,3 @@ export class TokenArbitrage {
     );
   }
 }
-
-// import IUniswapV3PoolABI from "@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json";
-// const testSqrt = new ethers.Contract(
-//   arbSetup.secondSwapPool.address,
-//   IUniswapV3PoolABI.abi,
-//   provider
-// );
-// console.log(await testSqrt.slot0());

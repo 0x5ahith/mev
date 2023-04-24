@@ -59,8 +59,9 @@ export class TokenArbitrage {
     let bestArb: Arb | undefined;
 
     for (const arbSetup of allArbSetups) {
-      const arb = await this.checkIfArbProfitable(arbSetup);
+      if (arbSetup.flashPool instanceof V2Pool) continue; // Using only UniswapV3 pools for flash swap
 
+      const arb = await this.checkIfArbProfitable(arbSetup);
       if (
         arb.profit > 0 &&
         (bestArb === undefined || arb.profit > bestArb.profit)

@@ -68,16 +68,20 @@ export function fromReadableAmount(
 }
 
 export function toReadableAmount(rawAmount: number, decimals: number): string {
-  return (+ethers.utils.formatUnits(rawAmount, decimals)).toFixed(3).toString();
+  return (+ethers.utils.formatUnits(Math.floor(rawAmount).toString(), decimals))
+    .toFixed(3)
+    .toString();
 }
 
 export function sushiswapOut(
-  amountIn: number,
-  reserveIn: number,
-  reserveOut: number,
+  amountIn: ethers.BigNumber,
+  reserveIn: ethers.BigNumber,
+  reserveOut: ethers.BigNumber,
   fee: number
 ): number {
   const k = 1 - fee;
-  const amountInPostFee = amountIn * k;
-  return (reserveOut * amountInPostFee) / (reserveIn + amountInPostFee);
+  const amountInPostFee = ethers.BigNumber.from(
+    Math.floor(amountIn * k).toString()
+  );
+  return reserveOut.mul(amountInPostFee).div(reserveIn.add(amountInPostFee));
 }

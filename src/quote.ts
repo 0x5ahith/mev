@@ -2,6 +2,7 @@ import { Token } from "@uniswap/sdk-core";
 
 import { USDC_TOKEN, WETH_TOKEN } from "./constants";
 import { TokenArbitrage } from "./TokenArbitrage";
+import { toReadableAmount } from "./utils";
 
 async function checkAndDoIfArbExistsForTokens(tokenA: Token, tokenB: Token) {
   const arb = new TokenArbitrage(tokenA, tokenB);

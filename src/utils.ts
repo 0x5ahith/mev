@@ -68,12 +68,10 @@ export function fromReadableAmount(
 }
 
 export function toReadableAmount(rawAmount: number, decimals: number): string {
-  return (+ethers.utils.formatUnits(
+  return ethers.utils.formatUnits(
     BigInt(Math.floor(rawAmount)).toString(),
     decimals
-  ))
-    .toFixed(3)
-    .toString();
+  );
 }
 
 export function sushiswapOut(

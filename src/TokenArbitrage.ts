@@ -21,7 +21,7 @@ import {
   fromReadableAmount,
   permuteAllArbs,
   priceToSqrtPriceX96,
-  provider,
+  getProvider,
   sushiswapOut,
   toReadableAmount,
 } from "./utils";
@@ -163,7 +163,7 @@ export class TokenArbitrage {
       const quoterContract = new ethers.Contract(
         QUOTER_ADDRESS[network.name],
         Quoter.abi,
-        provider
+        getProvider()
       );
       // Get optimal amountAIn of tokenA to arbitrage arbSetup.firstSwapPool
       amountAIn = await quoterContract.callStatic.quoteExactOutputSingle(
@@ -211,7 +211,7 @@ export class TokenArbitrage {
       const quoterContract = new ethers.Contract(
         QUOTER_ADDRESS[network.name],
         Quoter.abi,
-        provider
+        getProvider()
       );
       amountAFinal = await quoterContract.callStatic.quoteExactInputSingle(
         tokenB.address,
@@ -249,7 +249,7 @@ export class TokenArbitrage {
       const poolContract = new V3Pool(
         poolAddress,
         IUniswapV3PoolABI.abi,
-        provider
+        getProvider()
       );
 
       try {
@@ -272,13 +272,17 @@ export class TokenArbitrage {
     const factoryContract = new ethers.Contract(
       SUSHI_FACTORY_ADDRESS[network.name],
       UniswapV2Factory.abi,
-      provider
+      getProvider()
     );
     const pairAddress = await factoryContract.getPair(
       this.token0.address,
       this.token1.address
     );
-    const poolContract = new V2Pool(pairAddress, UniswapV2Pair.abi, provider);
+    const poolContract = new V2Pool(
+      pairAddress,
+      UniswapV2Pair.abi,
+      getProvider()
+    );
 
     try {
       await poolContract.token0();
@@ -306,7 +310,7 @@ export class TokenArbitrage {
     const quoterContract = new ethers.Contract(
       QUOTER_ADDRESS[network.name],
       Quoter.abi,
-      provider
+      getProvider()
     );
     const price = await quoterContract.callStatic.quoteExactInputSingle(
       this.token0.address,

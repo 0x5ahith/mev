@@ -2,9 +2,25 @@ import { Token } from "@uniswap/sdk-core";
 import { ethers, network } from "hardhat";
 import { ArbSetup, Pool } from "./TokenArbitrage";
 
-export const provider = new ethers.providers.JsonRpcProvider(
-  network.config.url
-);
+const LOCAL_BLOCKCHAINS: string[] = ["hardhat", "localhost"];
+
+export async function getSigner(): ethers.Signer {
+  if (LOCAL_BLOCKCHAINS.includes(network.name)) {
+    return (await ethers.getSigners())[0];
+  }
+  const provider = new ethers.providers.InfuraProvider(
+    network.name,
+    process.env.INFURA_API_KEY
+  );
+  return new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+}
+
+export function getProvider(): ethers.Provider {
+  if (LOCAL_BLOCKCHAINS.includes(network.name)) {
+    return ethers.provider;
+  }
+  return new ethers.providers.JsonRpcProvider(network.config.url);
+}
 
 export function permuteAllArbs(pools: Pool[]): ArbSetup[] {
   // Generates all sets of arbitrage pools (3 pools: 1 flash pool, 2 swap pools)

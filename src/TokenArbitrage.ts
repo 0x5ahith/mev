@@ -12,8 +12,8 @@ import UniswapV2Pair from "@uniswap/v2-core/build/UniswapV2Pair.json";
 import UniswapV2Factory from "@uniswap/v2-core/build/UniswapV2Factory.json";
 
 import {
-  QUOTER_ADDRESS,
-  SUSHI_FACTORY_ADDRESS,
+  UNISWAP_QUOTER,
+  SUSHI_FACTORY,
   SLIPPAGE,
   SUSHISWAP_FEE,
 } from "./constants";
@@ -73,9 +73,7 @@ export class TokenArbitrage {
   }
 
   async checkIfArbProfitable(arbSetup: ArbSetup): Promise<Arb> {
-    const [tokenA, tokenB, pArb, pReal] = await this._getTokensAndPrices(
-      arbSetup
-    );
+    const [tokenA, , ,] = await this._getTokensAndPrices(arbSetup);
     const arbInfo: Arb = {
       profit: -1,
       pools: arbSetup,
@@ -111,8 +109,7 @@ export class TokenArbitrage {
     const flashPoolFee = await arbSetup.flashPool.fee();
     const flashFee = (amountAIn * flashPoolFee) / 1e6;
     profit -= flashFee;
-
-    // add gas costs
+    if (profit < 0) return arbInfo;
 
     arbInfo.profit = profit;
 
@@ -131,9 +128,7 @@ export class TokenArbitrage {
   }
 
   async _getArbitrageSwapOut(arbSetup: ArbSetup): Promise<[number, number]> {
-    const [tokenA, tokenB, pArb, pReal] = await this._getTokensAndPrices(
-      arbSetup
-    );
+    const [tokenA, tokenB, , pReal] = await this._getTokensAndPrices(arbSetup);
     let amountAIn, amountBOut;
 
     if (arbSetup.firstSwapPool instanceof V2Pool) {
@@ -161,7 +156,7 @@ export class TokenArbitrage {
       );
 
       const quoterContract = new ethers.Contract(
-        QUOTER_ADDRESS[network.name],
+        UNISWAP_QUOTER[network.name],
         Quoter.abi,
         getProvider()
       );
@@ -209,7 +204,7 @@ export class TokenArbitrage {
         : pReal * (1 + SLIPPAGE);
 
       const quoterContract = new ethers.Contract(
-        QUOTER_ADDRESS[network.name],
+        UNISWAP_QUOTER[network.name],
         Quoter.abi,
         getProvider()
       );
@@ -270,7 +265,7 @@ export class TokenArbitrage {
 
   async getSushiswapPool(): Promise<V2Pool | null> {
     const factoryContract = new ethers.Contract(
-      SUSHI_FACTORY_ADDRESS[network.name],
+      SUSHI_FACTORY[network.name],
       UniswapV2Factory.abi,
       getProvider()
     );
@@ -308,7 +303,7 @@ export class TokenArbitrage {
 
   async getUniswapPrice(pool: V3Pool): Promise<number> {
     const quoterContract = new ethers.Contract(
-      QUOTER_ADDRESS[network.name],
+      UNISWAP_QUOTER[network.name],
       Quoter.abi,
       getProvider()
     );

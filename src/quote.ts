@@ -16,8 +16,17 @@ async function checkAndDoIfArbExistsForTokens(tokenA: Token, tokenB: Token) {
 
   const bestArb = await arb.findMaxProfitableArbFromPools(pools);
   if (bestArb === undefined) {
+    console.log("No profitable arbitrages");
     return;
   }
+
+  // gas costs
+
+  console.log("====> Best arb");
+  console.log(
+    "Profit:",
+    toReadableAmount(bestArb.profit, bestArb.flashToken.decimals)
+  );
 
   // Do arbitrage
 }

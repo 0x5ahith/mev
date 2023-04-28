@@ -12,70 +12,75 @@ import '@uniswap/v3-core/contracts/libraries/LowGasSafeMath.sol';
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/libraries/CallbackValidation.sol';
 import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
+import '@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol';
 
 import '@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol';
 
 import '@sushiswap/sushiswap/contracts/interfaces/IUniswapV2Callee.sol';
 
 contract SushiArb is IUniswapV3FlashCallback {
-  ISwapRouter public immutable uniswapV3Router;
+  ISwapRouter public immutable uniswapRouter;
   IUniswapV2Router02 public immutable sushiswapRouter;
-  address public immutable uniswapV3Factory;
+  address public immutable uniswapFactory;
 
   struct ArbParams {
-    address tokenA;
-    uint256 amountA; // TODO: can i reduce int size?
-    uint256 amountBOutMin;
-    uint256 amountAOutMin;
-    address uniswapFlashPool;
-    address uniswapPool;
-    address sushiswapPool;
-    uint24 uniswapPoolFee;
+    address flashToken;
+    address otherToken;
+    uint24 flashPoolFee;
+    uint256 flashAmount; // TODO: can i reduce int size?
+    uint24 firstSwapPoolFee;
+    uint256 firstSwapOutMin;
+    uint24 secondSwapPoolFee;
+    uint256 secondSwapOutMin;
   }
   struct FlashCallbackParams {
-    address tokenA;
-    uint256 amountA;
-    uint256 amountBOutMin;
-    uint256 amountAOutMin;
-    address uniswapFlashPool;
-    address sushiswapPool;
-    uint24 uniswapPoolFee;
+    address flashToken;
+    address otherToken;
+    PoolAddress.PoolKey flashPoolKey;
+    uint256 flashAmount;
+    uint24 firstSwapPoolFee;
+    uint256 firstSwapOutMin;
+    uint24 secondSwapPoolFee;
+    uint256 secondSwapOutMin;
     address caller;
   }
 
   constructor(
-    ISwapRouter _uniswapV3Router,
-    IUniswapV2Router02 _sushiswapRouter,
-    address _uniswapV3Factory
+    ISwapRouter uniswapRouter_,
+    IUniswapV2Router02 sushiswapRouter_,
+    address uniswapFactory_
   ) {
     // how to pass contract as param?
-    uniswapV3Router = _uniswapV3Router;
-    sushiswapRouter = _sushiswapRouter;
-    uniswapV3Factory = _uniswapV3Factory;
+    uniswapRouter = uniswapRouter_;
+    sushiswapRouter = sushiswapRouter_;
+    uniswapFactory = uniswapFactory_;
   }
 
   function initArb(ArbParams calldata params) external {
-    IUniswapV3Pool flashPool = IUniswapV3Pool(params.uniswapFlashPool);
-    uint256 token0Amount = params.tokenA == flashPool.token0()
-      ? params.amountA
-      : 0;
-    uint256 token1Amount = params.tokenA == flashPool.token1()
-      ? params.amountA
-      : 0;
+    PoolAddress.PoolKey memory flashPoolKey = PoolAddress.getPoolKey(
+      params.flashToken,
+      params.otherToken,
+      params.flashPoolFee
+    );
+    address flashPoolAddress = PoolAddress.computeAddress(
+      uniswapFactory,
+      flashPoolKey
+    );
 
-    flashPool.flash(
+    IUniswapV3Pool(flashPoolAddress).flash(
       address(this),
-      token0Amount,
-      token1Amount,
+      params.flashAmount,
+      0,
       abi.encode(
         FlashCallbackParams({
-          tokenA: params.tokenA,
-          amountA: params.amountA,
-          amountBOutMin: params.amountBOutMin,
-          amountAOutMin: params.amountAOutMin,
-          uniswapFlashPool: params.uniswapFlashPool,
-          sushiswapPool: params.sushiswapPool,
-          uniswapPoolFee: params.uniswapPoolFee,
+          flashToken: params.flashToken,
+          otherToken: params.otherToken,
+          flashPoolKey: flashPoolKey,
+          flashAmount: params.flashAmount,
+          firstSwapPoolFee: params.firstSwapPoolFee,
+          firstSwapOutMin: params.firstSwapOutMin,
+          secondSwapPoolFee: params.secondSwapPoolFee,
+          secondSwapOutMin: params.secondSwapOutMin,
           caller: msg.sender
         })
       )
@@ -87,69 +92,111 @@ contract SushiArb is IUniswapV3FlashCallback {
     uint256 fee1,
     bytes calldata data
   ) external override {
-    require(fee0 == 0 || fee1 == 0, 'Flash allowed for only one token');
+    require(fee1 == 0, 'Flash allowed for only one token');
     FlashCallbackParams memory params = abi.decode(data, (FlashCallbackParams));
 
     // Validate caller is a Uniswap pool
-    IUniswapV3Pool flashPool = IUniswapV3Pool(params.uniswapFlashPool);
-    address token0 = flashPool.token0();
-    address token1 = flashPool.token1();
-    CallbackValidation.verifyCallback(
-      uniswapV3Factory,
-      token0,
-      token1,
-      flashPool.fee()
-    );
+    CallbackValidation.verifyCallback(uniswapFactory, params.flashPoolKey);
 
-    address tokenA = params.tokenA;
-    address tokenB = tokenA != token0 ? token0 : token1;
+    address flashToken = params.flashToken;
+    address otherToken = params.otherToken;
 
-    // Swap on SushiSwap
-    address[] memory path = new address[](2);
-    path[0] = tokenA;
-    path[1] = tokenB;
+    // First swap
+    uint256 firstSwapAmountOut;
+    if (params.firstSwapPoolFee == 30) {
+      firstSwapAmountOut = _makeSushiswap(
+        flashToken,
+        otherToken,
+        params.flashAmount,
+        params.firstSwapOutMin
+      );
+    } else {
+      firstSwapAmountOut = _makeUniswap(
+        flashToken,
+        otherToken,
+        params.firstSwapPoolFee,
+        params.flashAmount,
+        params.firstSwapOutMin
+      );
+    }
 
-    TransferHelper.safeApprove(
-      tokenA,
-      address(sushiswapRouter),
-      params.amountA
-    );
-    uint256 amountB = sushiswapRouter.swapExactTokensForTokens(
-      params.amountA,
-      params.amountBOutMin,
-      path,
-      address(this),
-      block.timestamp - 1 // test this
-    )[1];
+    // Second swap
+    uint256 flashAmountOwed = LowGasSafeMath.add(params.flashAmount, fee0);
+    uint256 secondSwapMinAmountOut = params.secondSwapOutMin > flashAmountOwed
+      ? params.secondSwapOutMin
+      : flashAmountOwed;
 
-    // Swap back on Uniswap
-    uint256 amountAOwed = LowGasSafeMath.add(
-      params.amountA,
-      fee0 != 0 ? fee0 : fee1
-    );
-    TransferHelper.safeApprove(tokenB, address(uniswapV3Router), amountB);
-    uint256 amountAOut = uniswapV3Router.exactInputSingle(
-      ISwapRouter.ExactInputSingleParams({
-        tokenIn: tokenB,
-        tokenOut: tokenA,
-        fee: params.uniswapPoolFee,
-        recipient: address(this),
-        deadline: block.timestamp + 1,
-        amountIn: amountB,
-        amountOutMinimum: params.amountAOutMin > amountAOwed
-          ? params.amountAOutMin
-          : amountAOwed,
-        sqrtPriceLimitX96: 0 // TODO: experiment with this
-      })
-    );
+    uint256 secondSwapAmountOut;
+    if (params.secondSwapPoolFee == 30) {
+      secondSwapAmountOut = _makeSushiswap(
+        otherToken,
+        flashToken,
+        firstSwapAmountOut,
+        secondSwapMinAmountOut
+      );
+    } else {
+      secondSwapAmountOut = _makeUniswap(
+        otherToken,
+        flashToken,
+        params.secondSwapPoolFee,
+        firstSwapAmountOut,
+        secondSwapMinAmountOut
+      );
+    }
 
     // Return flash loan
-    TransferHelper.safeTransfer(tokenA, msg.sender, amountAOwed);
+    TransferHelper.safeTransfer(flashToken, msg.sender, flashAmountOwed);
 
     // Pay out profits
-    if (amountAOut > amountAOwed) {
-      uint256 profits = LowGasSafeMath.sub(amountAOut, amountAOwed);
-      TransferHelper.safeTransfer(tokenA, params.caller, profits);
+    if (secondSwapAmountOut > flashAmountOwed) {
+      uint256 profits = LowGasSafeMath.sub(
+        secondSwapAmountOut,
+        flashAmountOwed
+      );
+      TransferHelper.safeTransfer(flashToken, params.caller, profits);
     }
+  }
+
+  function _makeSushiswap(
+    address fromToken,
+    address toToken,
+    uint256 amountIn,
+    uint256 minAmountOut
+  ) internal returns (uint256 amountOut) {
+    TransferHelper.safeApprove(fromToken, address(sushiswapRouter), amountIn);
+
+    address[] memory path = new address[](2);
+    path[0] = fromToken;
+    path[1] = toToken;
+
+    amountOut = sushiswapRouter.swapExactTokensForTokens(
+      amountIn,
+      minAmountOut,
+      path,
+      address(this),
+      block.timestamp + 1
+    )[1];
+  }
+
+  function _makeUniswap(
+    address fromToken,
+    address toToken,
+    uint24 fee,
+    uint256 amountIn,
+    uint256 minAmountOut
+  ) internal returns (uint256 amountOut) {
+    TransferHelper.safeApprove(fromToken, address(uniswapRouter), amountIn);
+    amountOut = uniswapRouter.exactInputSingle(
+      ISwapRouter.ExactInputSingleParams({
+        tokenIn: fromToken,
+        tokenOut: toToken,
+        fee: fee,
+        recipient: address(this),
+        deadline: block.timestamp + 1,
+        amountIn: amountIn,
+        amountOutMinimum: minAmountOut,
+        sqrtPriceLimitX96: 0
+      })
+    );
   }
 }

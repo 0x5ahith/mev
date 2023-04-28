@@ -31,6 +31,7 @@ async function deployFactories(): Promise<deployFactoryResponse> {
   console.log("Uniswap factory address:", uniswapFactory.address);
 
   // Deploy SushiSwap factory
+  // TODO: use deploy plugin
   const sushiswapDeployerAddress = "0xF942Dba4159CB61F8AD88ca4A83f5204e8F4A6bd";
   const sushiswapDeployer = await ethers.getImpersonatedSigner(
     sushiswapDeployerAddress

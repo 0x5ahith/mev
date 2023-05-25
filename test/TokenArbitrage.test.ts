@@ -31,7 +31,6 @@ describe("Unit tests for TokenArbitrage class", function () {
       const { tokenArb, address500, address3000, address10000 } =
         await loadFixture(setUpPoolsFixture);
 
-      console.log(address500, address3000, address10000);
       const pools = await tokenArb.getUniswapPools();
       expect(pools.length).to.equal(3);
       for (const pool of pools) {
@@ -39,6 +38,14 @@ describe("Unit tests for TokenArbitrage class", function () {
           pool.address
         );
       }
+    });
+
+    it("SushiSwap pool", async function () {
+      const { tokenArb, addressSushi } = await loadFixture(setUpPoolsFixture);
+
+      const pool = await tokenArb.getSushiswapPool();
+      expect(pool).to.not.be.null;
+      expect(pool?.address).to.equal(addressSushi);
     });
   });
 });

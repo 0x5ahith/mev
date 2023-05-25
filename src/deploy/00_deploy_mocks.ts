@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 import { setBalance } from "@nomicfoundation/hardhat-network-helpers";
 import { Token } from "@uniswap/sdk-core";
 
@@ -43,6 +43,11 @@ async function deployFactories(): Promise<DeployFactoryResponse> {
       SushiswapV2Factory.bytecode
     )
   ).connect(sushiswapDeployer);
+  // Nonce of 58 (https://etherscan.io/tx/0x7714c68f1561629b3656da2e4aea1a5b9f1402568398a4396f9d256900230220)
+  await network.provider.send("hardhat_setNonce", [
+    sushiswapDeployerAddress,
+    "0x3A",
+  ]);
   const sushiswapFactory = await SushiswapFactory.deploy(
     sushiswapDeployer.address
   );

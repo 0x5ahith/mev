@@ -1,20 +1,20 @@
 import { Token } from "@uniswap/sdk-core";
 
-export type deployFactoryResponse = {
+export type DeployFactoryResponse = {
   uniswapFactory: ethers.Contract;
   sushiswapFactory: ethers.Contract;
 };
 
-export type deployTokensResponse = {
+export type DeployTokensResponse = {
   USDC_TOKEN: Token;
   WETH_TOKEN: Token;
 };
 
-export type deployPoolsResponse = {
+export type DeployPoolsResponse = {
   address500: string;
   address3000: string;
   address10000: string;
   addressSushi: string;
 };
 
-export type deployMocksResponse = deployTokensResponse & deployPoolsResponse;
+export type DeployMocksResponse = DeployTokensResponse & DeployPoolsResponse;

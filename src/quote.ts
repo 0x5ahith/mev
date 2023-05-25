@@ -1,6 +1,6 @@
 import { Token } from "@uniswap/sdk-core";
 
-import { USDC_TOKEN, WETH_TOKEN } from "./constants";
+import { USDC_TOKEN, WETH_TOKEN } from "./tokens";
 import { TokenArbitrage } from "./TokenArbitrage";
 import { toReadableAmount } from "./utils";
 

@@ -156,7 +156,7 @@ export class TokenArbitrage {
       );
 
       const quoterContract = new ethers.Contract(
-        UNISWAP_QUOTER[network.name],
+        UNISWAP_QUOTER,
         Quoter.abi,
         getProvider()
       );
@@ -204,7 +204,7 @@ export class TokenArbitrage {
         : pReal * (1 + SLIPPAGE);
 
       const quoterContract = new ethers.Contract(
-        UNISWAP_QUOTER[network.name],
+        UNISWAP_QUOTER,
         Quoter.abi,
         getProvider()
       );
@@ -265,7 +265,7 @@ export class TokenArbitrage {
 
   async getSushiswapPool(): Promise<V2Pool | null> {
     const factoryContract = new ethers.Contract(
-      SUSHI_FACTORY[network.name],
+      SUSHI_FACTORY,
       UniswapV2Factory.abi,
       getProvider()
     );
@@ -303,7 +303,7 @@ export class TokenArbitrage {
 
   async getUniswapPrice(pool: V3Pool): Promise<number> {
     const quoterContract = new ethers.Contract(
-      UNISWAP_QUOTER[network.name],
+      UNISWAP_QUOTER,
       Quoter.abi,
       getProvider()
     );

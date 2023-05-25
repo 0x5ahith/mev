@@ -7,13 +7,13 @@ import SushiswapV2Factory from "@sushiswap/sushiswap/deployments/ethereum/Uniswa
 import ERC20 from "@openzeppelin/contracts/build/contracts/ERC20.json";
 
 import {
-  deployFactoryResponse,
-  deployMocksResponse,
-  deployPoolsResponse,
-  deployTokensResponse,
+  DeployFactoryResponse,
+  DeployMocksResponse,
+  DeployPoolsResponse,
+  DeployTokensResponse,
 } from "../types";
 
-async function deployFactories(): Promise<deployFactoryResponse> {
+async function deployFactories(): Promise<DeployFactoryResponse> {
   // Deploy Uniswap factory
   const uniswapDeployerAddress = "0x6C9FC64A53c1b71FB3f9Af64d1ae3A4931A5f4E9";
   const uniswapDeployer = await ethers.getImpersonatedSigner(
@@ -51,7 +51,7 @@ async function deployFactories(): Promise<deployFactoryResponse> {
   return { uniswapFactory, sushiswapFactory };
 }
 
-async function deployTokens(): Promise<deployTokensResponse> {
+async function deployTokens(): Promise<DeployTokensResponse> {
   // Deploy tokens
   const ERC20Token = await ethers.getContractFactory(ERC20.abi, ERC20.bytecode);
   const usdc = await ERC20Token.deploy("USD Coin", "USDC");
@@ -67,7 +67,7 @@ async function deployPools(
   sushiswapFactory: ethers.Contract,
   token0: Token,
   token1: Token
-): Promise<deployPoolsResponse> {
+): Promise<DeployPoolsResponse> {
   // Deploy Uniswap v3 pools
   const getPoolAddress = async (txResponse) => {
     const txReceipt = await txResponse.wait();
@@ -101,7 +101,7 @@ async function deployPools(
   return { address500, address3000, address10000, addressSushi };
 }
 
-export async function deployMocks(): Promise<deployMocksResponse> {
+export async function deployMocks(): Promise<DeployMocksResponse> {
   const { uniswapFactory, sushiswapFactory } = await deployFactories();
   const { USDC_TOKEN, WETH_TOKEN } = await deployTokens();
   const { address500, address3000, address10000, addressSushi } =

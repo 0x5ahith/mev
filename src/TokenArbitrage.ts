@@ -4,7 +4,7 @@ import {
   computePoolAddress,
   FACTORY_ADDRESS,
 } from "@uniswap/v3-sdk";
-import { ethers, network } from "hardhat";
+import { ethers } from "hardhat";
 
 import Quoter from "@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json";
 import IUniswapV3PoolABI from "@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json";

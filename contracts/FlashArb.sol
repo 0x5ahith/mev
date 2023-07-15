@@ -18,7 +18,7 @@ import '@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol';
 
 import '@sushiswap/sushiswap/contracts/interfaces/IUniswapV2Callee.sol';
 
-contract SushiArb is IUniswapV3FlashCallback {
+contract FlashArb is IUniswapV3FlashCallback {
   ISwapRouter public immutable uniswapRouter;
   IUniswapV2Router02 public immutable sushiswapRouter;
   address public immutable uniswapFactory;
@@ -46,13 +46,12 @@ contract SushiArb is IUniswapV3FlashCallback {
   }
 
   constructor(
-    ISwapRouter uniswapRouter_,
-    IUniswapV2Router02 sushiswapRouter_,
+    address uniswapRouter_,
+    address sushiswapRouter_,
     address uniswapFactory_
   ) {
-    // how to pass contract as param?
-    uniswapRouter = uniswapRouter_;
-    sushiswapRouter = sushiswapRouter_;
+    uniswapRouter = ISwapRouter(uniswapRouter_);
+    sushiswapRouter = IUniswapV2Router02(sushiswapRouter_);
     uniswapFactory = uniswapFactory_;
   }
 
